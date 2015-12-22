@@ -4,10 +4,9 @@ import socket
 import time
 
 
-TCP_IP = '192.168.0.15'
+TCP_IP = '192.168.0.2'
 TCP_PORT = 80
-BUFFER_SIZE = 1024
-MESSAGE = "Hello, World!"
+BUFFER_SIZE = 256
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 #s.setblocking(0)

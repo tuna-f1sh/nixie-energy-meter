@@ -8,7 +8,7 @@ BOARD_TAG    = uno
 # MONITOR_PORT = /dev/tty.SLAB*
 #MONITOR_PORT = /dev/tty.wchusb*
 
-ARDUINO_LIBS = EmonLib SoftwareSerial ESP8266wifi NixieTubev2
+ARDUINO_LIBS = EmonLib SoftwareSerial ESP8266wifi NixieTubev2 EEPROM
 AVRDUDE_OPTS = -V
 
 # ARDUINO_QUIET = 1
