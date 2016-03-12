@@ -32,7 +32,7 @@ MAT_Z = 3.15;
 
 // --- COMPILE SETTING ----
 // make export true if you want to create DXF print sheet, otherwise 3D render is created to visualise
-export = false;
+export = true;
 
 // --- SETTINGS END ---
 /* ========================*/

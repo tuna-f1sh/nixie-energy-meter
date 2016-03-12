@@ -20,11 +20,3 @@
 #define SI_HOUR_MASK  (1 << SI_MEGA | 1 << SI_KILO | 1 << SI_WATT)
 #define SI_KILO_MASK  (1 << SI_MEGA | 1 << SI_WATT | 1 << SI_HOUR)
 #define SI_MEGA_MASK  (1 << SI_KILO | 1 << SI_WATT | 1 << SI_HOUR)
-
-enum rolling_t
-{
-  second,
-  minute,
-  hour,
-  day
-};
