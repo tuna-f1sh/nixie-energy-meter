@@ -1,22 +1,22 @@
-#include <ESP8266wifi.h>
+#include <EmonLib.h>
 #include <NixieTube.h>
-#include <SoftwareSerial.h>
+#include <EEPROM.h>
 
 #include "energy-box.h"
 
-// Server port
-#define SERVER_PORT "2121"
 // Delay between prints and rolling filter calc
 #define PRINT_DELAY 2000
 // Uncomment to set these if not using private header
-#define SSID "energy-box"
-#define PASSWORD "energy12"
+/* #define SSID "yourssid"*/
+/* #define PASSWORD "yourpassword"*/
 
-// Software serial for ESP8266
-SoftwareSerial swSerial(sw_serial_rx_pin, sw_serial_tx_pin);
+// SSID in header to keep private from REPO
+#ifndef SSID
+#include "ssid.h"
+#endif
 
-// Wifi
-ESP8266wifi wifi(swSerial, swSerial, esp8266_reset_pin, Serial);//adding Serial enabled local echo and wifi debug
+// Create current transformer object
+EnergyMonitor emon;
 
 // NixieTube(DIN,ST,SH,OE,NUM)
 NixieTube tube(11, 12, 13, 10, 2);
@@ -24,24 +24,44 @@ NixieTube tube(11, 12, 13, 10, 2);
 // Print power to Nixie display
 // Sets colon and SI unit
 void printPwr(uint16_t Pwr);
-// Process commands from TCP
-void processCommand(WifiMessage msg);
+// Update rolling averages
+inline void updateRoll(uint8_t index);
 
-uint8_t wifi_started = false;
-uint32_t print_delay = false;
+// Rolling averages calc
+uint32_t print_delay = 0;
+uint32_t roll[4] = {0};
+uint32_t avg[4] = {0};
+uint32_t count[4] = {0};
+
+rolling_t display = second;
 
 void setup()
 {  
+  uint8_t adc_cal = 0;
+  uint8_t flag = 0;
+
   // create serial port
-  swSerial.begin(115200);
-  Serial.begin(115200);
+  Serial.begin(9600);
   while(!Serial) {;;}
-  Serial.println("Booting..");
 
   // set SI pins as output
   SI_DDR |= SI_PIN_MASK;
   // set SI pins off (high)
   SI_PORT |= SI_OFF_MASK;
+
+  // emon current calibrate with EEPROM if exist
+  flag = EEPROM.read(EEPROM_FLAG);
+  if (flag == EEPROM_FLAG_VALUE) {
+    adc_cal = EEPROM.read(EEPROM_CAL);
+    emon.current(0, adc_cal); // cal saved in EEPROM
+  // EEPROM not programmed, set flag and save default calibration
+  } else {
+    emon.current(0, 29); // calibrated with meter
+    EEPROM.write(EEPROM_FLAG,EEPROM_FLAG_VALUE);
+    EEPROM.write(EEPROM_CAL,29);
+    /* emon.current(0, 60.6); // 33ohm*/
+    /* emon.current(0, 111.1); // 18ohm*/
+  }
 
   tube.setBrightness(0xff);
   tube.setBackgroundColor((Color) 2);
@@ -49,68 +69,57 @@ void setup()
   tube.setColon((Colon) Both);
   tube.display();
 
-  // --- Fancy boot animation ---
   for (int i = 0; i < 10; i++) {
     tube.setNumber(i);
     tube.display();
-    SI_PORT &= ~(SI_PIN_MASK & (1 << ( SI_HOUR + i )));
+    SI_PORT &= ~(SI_PIN_MASK & (1 << SI_HOUR + i));
     delay(100);
   }
 
   for (int i = 9; i >= 0; i--) {
     tube.setNumber(i);
     tube.display();
-    SI_PORT |= (SI_PIN_MASK & (1 << ( SI_HOUR + i )));
+    SI_PORT |= (SI_PIN_MASK & (1 << SI_HOUR + i));
     delay(100);
   }
 
   SI_PORT &= SI_WATT_MASK;
-  // --- -------------------- ---
 
-  Serial.println("Starting wifi");
-  wifi.setTransportToTCP();// this is also default
-  wifi.endSendWithNewline(false); // Will end all transmissions with a newline and carrage return ie println.. default is true
-  wifi_started = wifi.begin();
-  if (wifi_started) {
-    wifi.connectToAP(SSID, PASSWORD);
-    /* wifi.startLocalServer(SERVER_PORT);*/
-    wifi.connectToServer("192.168.4.1","2121");
-
-    tube.setBackgroundColor((Color) White);
-    tube.display();
-  } else {
-    tube.setBackgroundColor((Color) Red);
-    tube.display();
-  }
-
+  tube.setBackgroundColor((Color) White);
+  tube.display();
   Serial.println("JBR Energy Monitor Up");
 }
 
 void loop()
 {
+  double Irms = 0.0;
   uint16_t Pwr = 0;
-  char espBuf[1];
 
-  //Make sure the esp8266 is started..
-  if (!wifi.isStarted())
-    wifi.begin();
+  Irms = emon.calcIrms(1480);
+  Pwr = Irms * 230;
 
-  espBuf[0] = 0xC0;
-  wifi.send(SERVER, espBuf, false);
-
-  print_delay = millis();
-  WifiMessage in = wifi.listenForIncomingMessage(2000);
-  if (in.hasData) {
-    Pwr = (uint16_t) ((in.message[1] & 0x7F) + ((in.message[2] << 7) & 0x7F));
-    swSerial.println(Pwr);
+  // Update rolling averages
+  if (millis() - print_delay > PRINT_DELAY) {
+    updateRoll(0);
+    printPwr(avg[display]);
+    print_delay = millis();
+    /* swSerial.print(roll[0]);*/
+    /* swSerial.println(roll[1]);*/
+  } else {
+    count[0]++;
+    roll[0] += Pwr;
   }
 
-  // display power
-  printPwr(Pwr);
+  if (count[1] == (60 / (PRINT_DELAY / 1000))) {
+    updateRoll(1);
+  }
 
-  // wait for min time
-  while (millis() - print_delay < PRINT_DELAY ) {
-    ;;
+  if (count[2] == 60) {
+    updateRoll(2);
+  }
+
+  if (count[3] == 24) {
+    updateRoll(3);
   }
 }
 
@@ -129,19 +138,25 @@ void printPwr(uint16_t Pwr) {
   } else {
     tube.setColon(1,(Colon) None);
   }
+
+  // set kilowatt hours
+  if (display == (rolling_t) hour)
+    SI_PORT &= SI_HOUR_MASK;
   
   tube.display();
 }
 
-void processCommand(WifiMessage msg) {
-  // return buffer
-  char espBuf[MSG_BUFFER_MAX];
-  // scanf holders
-  int set;
-  char str[16];
-
-  // Get command and setting
-  sscanf(msg.message,"%15s %d",str,&set);
-  Serial.print(str);
-  Serial.println(set);
+inline void updateRoll(uint8_t index) {
+  // work out average
+  roll[index] /= count[index];
+  // set new average
+  avg[index] = roll[index];
+  // clear rolling accumulators
+  roll[index] = 0;
+  count[index] = 0;
+  if ( index < (sizeof(roll) / sizeof(roll[0])) ) {
+    // inc next time roll
+    roll[index+1] += avg[index];
+    count[index+1]++;
+  }
 }
