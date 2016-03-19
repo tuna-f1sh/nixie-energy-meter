@@ -1,31 +1,23 @@
-#include <ESP8266wifi.h>
+#include <SPI.h>
+#include <RF24.h>
 #include <NixieTube.h>
-#include <SoftwareSerial.h>
 
 #include "energy-box.h"
 
-// Server port
-#define SERVER_PORT "2121"
 // Delay between prints and rolling filter calc
 #define PRINT_DELAY 2000
-// Uncomment to set these if not using private header
-#define SSID "energy-box"
-#define PASSWORD "energy12"
-
-// Software serial for ESP8266
-SoftwareSerial swSerial(sw_serial_rx_pin, sw_serial_tx_pin);
-
-// Wifi
-ESP8266wifi wifi(swSerial, swSerial, esp8266_reset_pin, Serial);//adding Serial enabled local echo and wifi debug
 
 // NixieTube(DIN,ST,SH,OE,NUM)
-NixieTube tube(11, 12, 13, 10, 2);
+NixieTube tube(2, 3, 4, 5, 2);
+
+RF24 radio(8,9);
+
+// Radio pipe addresses for the 2 nodes to communicate.
+const uint64_t pipes[2] = { 0xF0F0F0F0E1LL, 0xF0F0F0F0D2LL };
 
 // Print power to Nixie display
 // Sets colon and SI unit
 void printPwr(uint16_t Pwr);
-// Process commands from TCP
-void processCommand(WifiMessage msg);
 
 uint8_t wifi_started = false;
 uint32_t print_delay = false;
@@ -33,7 +25,6 @@ uint32_t print_delay = false;
 void setup()
 {  
   // create serial port
-  swSerial.begin(115200);
   Serial.begin(115200);
   while(!Serial) {;;}
   Serial.println("Booting..");
@@ -67,51 +58,63 @@ void setup()
   SI_PORT &= SI_WATT_MASK;
   // --- -------------------- ---
 
-  Serial.println("Starting wifi");
-  wifi.setTransportToTCP();// this is also default
-  wifi.endSendWithNewline(false); // Will end all transmissions with a newline and carrage return ie println.. default is true
-  wifi_started = wifi.begin();
-  if (wifi_started) {
-    wifi.connectToAP(SSID, PASSWORD);
-    /* wifi.startLocalServer(SERVER_PORT);*/
-    wifi.connectToServer("192.168.4.1","2121");
+  radio.begin();
+  radio.setRetries(15,15);
+  radio.openWritingPipe(pipes[0]);
+  radio.openReadingPipe(1,pipes[1]);
 
-    tube.setBackgroundColor((Color) White);
-    tube.display();
-  } else {
-    tube.setBackgroundColor((Color) Red);
-    tube.display();
-  }
+  radio.startListening();
+  radio.printDetails();
 
   Serial.println("JBR Energy Monitor Up");
+  tube.setBackgroundColor((Color) White);
 }
 
 void loop()
 {
-  uint16_t Pwr = 0;
-  char espBuf[1];
+  static uint16_t Pwr = 0;
+  uint8_t req = 0xC0;
+  bool timeout = false;
+  static uint8_t count = 0;
+  
+  // stop listening to talk
+  radio.stopListening();
 
-  //Make sure the esp8266 is started..
-  if (!wifi.isStarted())
-    wifi.begin();
+  // send power request
+  if (radio.write( &req, sizeof(req) ))
+    Serial.println("Sent request");
+  else
+    Serial.println("Request failed");
 
-  espBuf[0] = 0xC0;
-  wifi.send(SERVER, espBuf, false);
+  // resume listening
+  radio.startListening();
 
-  print_delay = millis();
-  WifiMessage in = wifi.listenForIncomingMessage(2000);
-  if (in.hasData) {
-    Pwr = (uint16_t) ((in.message[1] & 0x7F) + ((in.message[2] << 7) & 0x7F));
-    swSerial.println(Pwr);
+  while( !radio.available() && !timeout) {
+    timeout = (millis() - print_delay < PRINT_DELAY) ? false : true;
   }
+
+  if (!timeout) {
+    radio.read( &Pwr, sizeof(Pwr) );
+    tube.setBackgroundColor((Color) White);
+    Serial.print("Pwr: ");
+    Serial.println(Pwr);
+    count = 0;
+  } else {
+    if (count > 5) {
+      tube.setBackgroundColor((Color) Red);
+      Pwr = 0;
+    }
+    Serial.println("No reply..");
+    timeout = false;
+    count++;
+  }
+
+  // wait for min time
+  while (millis() - print_delay < PRINT_DELAY );
 
   // display power
   printPwr(Pwr);
-
-  // wait for min time
-  while (millis() - print_delay < PRINT_DELAY ) {
-    ;;
-  }
+  print_delay = millis();
 }
 
 void printPwr(uint16_t Pwr) {
@@ -131,17 +134,4 @@ void printPwr(uint16_t Pwr) {
   }
   
   tube.display();
-}
-
-void processCommand(WifiMessage msg) {
-  // return buffer
-  char espBuf[MSG_BUFFER_MAX];
-  // scanf holders
-  int set;
-  char str[16];
-
-  // Get command and setting
-  sscanf(msg.message,"%15s %d",str,&set);
-  Serial.print(str);
-  Serial.println(set);
 }

@@ -5,10 +5,10 @@ MCU = atmega328p
 F_CPU = 16000000
 AVRDUDE_ARD_BAUDRATE = 57600
 # # FTDI
-# MONITOR_PORT = /dev/tty.SLAB*
-MONITOR_PORT = /dev/tty.wchusb*
+MONITOR_PORT = /dev/tty.SLAB*
+# MONITOR_PORT = /dev/tty.wchusb*
 
-ARDUINO_LIBS = SoftwareSerial ESP8266wifi NixieTubev2
+ARDUINO_LIBS = RF24 NixieTubev2 SPI
 AVRDUDE_OPTS = -V
 
 # ARDUINO_QUIET = 1
