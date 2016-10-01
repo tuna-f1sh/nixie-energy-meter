@@ -33,6 +33,8 @@ uint32_t roll[4] = {0};
 uint32_t avg[4] = {0};
 uint32_t count[4] = {0};
 
+uint32_t pirTimer = 0;
+
 rolling_t display = second;
 
 void setup()
@@ -49,19 +51,23 @@ void setup()
   // set SI pins off (high)
   SI_PORT |= SI_OFF_MASK;
 
+  pinMode(2, INPUT);
+
+  emon.current(0, 60.6); // calibrated with meter
+
   // emon current calibrate with EEPROM if exist
-  flag = EEPROM.read(EEPROM_FLAG);
-  if (flag == EEPROM_FLAG_VALUE) {
-    adc_cal = EEPROM.read(EEPROM_CAL);
-    emon.current(0, adc_cal); // cal saved in EEPROM
-  // EEPROM not programmed, set flag and save default calibration
-  } else {
-    emon.current(0, 29); // calibrated with meter
-    EEPROM.write(EEPROM_FLAG,EEPROM_FLAG_VALUE);
-    EEPROM.write(EEPROM_CAL,29);
+  /* flag = EEPROM.read(EEPROM_FLAG);*/
+  /* if (flag == EEPROM_FLAG_VALUE) {*/
+  /*   adc_cal = EEPROM.read(EEPROM_CAL);*/
+  /*   emon.current(0, adc_cal); // cal saved in EEPROM*/
+  /* // EEPROM not programmed, set flag and save default calibration*/
+  /* } else {*/
+    /* emon.current(0, 29); // calibrated with meter*/
+    /* EEPROM.write(EEPROM_FLAG,EEPROM_FLAG_VALUE);*/
+    /* EEPROM.write(EEPROM_CAL,29);*/
     /* emon.current(0, 60.6); // 33ohm*/
     /* emon.current(0, 111.1); // 18ohm*/
-  }
+  /* }*/
 
   tube.setBrightness(0xff);
   tube.setBackgroundColor((Color) 2);
@@ -72,18 +78,19 @@ void setup()
   for (int i = 0; i < 10; i++) {
     tube.setNumber(i);
     tube.display();
-    SI_PORT &= ~(SI_PIN_MASK & (1 << SI_HOUR + i));
+    SI_PORT &= ~(SI_PIN_MASK & (1 << (SI_HOUR + i) ));
     delay(100);
   }
 
   for (int i = 9; i >= 0; i--) {
     tube.setNumber(i);
     tube.display();
-    SI_PORT |= (SI_PIN_MASK & (1 << SI_HOUR + i));
+    SI_PORT |= (SI_PIN_MASK & (1 << (SI_HOUR + i) ));
     delay(100);
   }
 
   SI_PORT &= SI_WATT_MASK;
+  pirTimer = millis();
 
   tube.setBackgroundColor((Color) White);
   tube.display();
@@ -98,10 +105,24 @@ void loop()
   Irms = emon.calcIrms(1480);
   Pwr = Irms * 230;
 
+  // reset display on timer if movement
+  if (digitalRead(2))
+    pirTimer = millis();
+
+  // has there been movement in the last 120s?
+  if ( (millis() - pirTimer) < 120000) {
+    // YES - display on tubes
+    printPwr(avg[display]);
+  } else {
+    // NO - turn tubes off
+    tube.setNumber(-1);
+    SI_PORT |= SI_OFF_MASK;
+    tube.display();
+  }
+
   // Update rolling averages
   if (millis() - print_delay > PRINT_DELAY) {
     updateRoll(0);
-    printPwr(avg[display]);
     print_delay = millis();
     /* swSerial.print(roll[0]);*/
     /* swSerial.println(roll[1]);*/
@@ -125,7 +146,10 @@ void loop()
 
 void printPwr(uint16_t Pwr) {
   tube.printf("%02d",Pwr);
+  // all off (except Watts)
   SI_PORT |= (SI_OFF_MASK & SI_WATT_MASK);
+  // Watts on if waking via Pir
+  SI_PORT &= SI_WATT_MASK;
   
   if ((Pwr >= 100) && (Pwr < 1000)) {
     tube.setColon(1,(Colon) Lower);
