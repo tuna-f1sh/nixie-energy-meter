@@ -27,7 +27,7 @@ void setup() {
   pinMode(2, OUTPUT);
   pinMode(3, OUTPUT);
 
-  emon.current(0, 29); // calibrated with meter
+  emon.current(0, 111.1); // calibrated with meter
 
   radio.begin();
   radio.setRetries(15,15);
