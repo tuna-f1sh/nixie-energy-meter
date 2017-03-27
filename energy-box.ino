@@ -1,16 +1,15 @@
 #include <SPI.h>
 #include <RF24.h>
-#include <NixieTube.h>
+#include <NixiePipe.h>
 
 #include "energy-box.h"
 
 // Delay between prints and rolling filter calc
 #define PRINT_DELAY 2000
 
-// NixieTube(DIN,ST,SH,OE,NUM)
-NixieTube tube(2, 3, 4, 5, 2);
+NixiePipe npipes = NixiePipe(3,2);
 
-RF24 radio(8,9);
+RF24 radio(9,10);
 
 // Radio pipe addresses for the 2 nodes to communicate.
 const uint64_t pipes[2] = { 0xF0F0F0F0E1LL, 0xF0F0F0F0D2LL };
@@ -21,6 +20,7 @@ void printPwr(uint16_t Pwr);
 
 uint8_t wifi_started = false;
 uint32_t print_delay = false;
+CRGB gMainRGB = CRGB::OrangeRed;
 
 void setup()
 {  
@@ -29,45 +29,37 @@ void setup()
   while(!Serial) {;;}
   Serial.println("Booting..");
 
-  // set SI pins as output
-  SI_DDR |= SI_PIN_MASK;
-  // set SI pins off (high)
-  SI_PORT |= SI_OFF_MASK;
-
-  tube.setBrightness(0xff);
-  tube.setBackgroundColor((Color) 2);
-  tube.setNumber(0);
-  tube.setColon((Colon) Both);
-  tube.display();
+  npipes.begin();
+  npipes.clear();
+  npipes.setBrightness(255);
+  npipes.setPipeColour(gMainRGB);
+  npipes.setPipeNumber(0, Unit::Watts);
+  npipes.setPipeNumber(1, Prefix::Mega);
+  npipes.show();
 
   // --- Fancy boot animation ---
   for (int i = 0; i < 10; i++) {
-    tube.setNumber(i);
-    tube.display();
-    SI_PORT &= ~(SI_PIN_MASK & (1 << ( SI_HOUR + i )));
+    npipes.writeNumber(i);
+    npipes.show();
     delay(100);
   }
 
   for (int i = 9; i >= 0; i--) {
-    tube.setNumber(i);
-    tube.display();
-    SI_PORT |= (SI_PIN_MASK & (1 << ( SI_HOUR + i )));
+    npipes.writeNumber(i);
+    npipes.show();
     delay(100);
   }
-
-  SI_PORT &= SI_WATT_MASK;
-  // --- -------------------- ---
 
   radio.begin();
   radio.setRetries(15,15);
   radio.openWritingPipe(pipes[0]);
   radio.openReadingPipe(1,pipes[1]);
+  radio.printDetails();
 
   radio.startListening();
   radio.printDetails();
 
   Serial.println("JBR Energy Monitor Up");
-  tube.setBackgroundColor((Color) White);
 }
 
 void loop()
@@ -95,13 +87,13 @@ void loop()
 
   if (!timeout) {
     radio.read( &Pwr, sizeof(Pwr) );
-    tube.setBackgroundColor((Color) White);
+    npipes.setPipeColour(gMainRGB);
     Serial.print("Pwr: ");
     Serial.println(Pwr);
     count = 0;
   } else {
     if (count > 5) {
-      tube.setBackgroundColor((Color) Red);
+      npipes.setPipeColour(CRGB::Red);
       Pwr = 0;
     }
     Serial.println("No reply..");
@@ -118,20 +110,16 @@ void loop()
 }
 
 void printPwr(uint16_t Pwr) {
-  tube.printf("%02d",Pwr);
-  SI_PORT |= (SI_OFF_MASK & SI_WATT_MASK);
+  npipes.writeNumber( (Pwr % 1000) );
   
-  if ((Pwr >= 100) && (Pwr < 1000)) {
-    tube.setColon(1,(Colon) Lower);
+  if (Pwr < 1000) {
+    npipes.setPipeColour(1, CRGB::Black);
   } else if ((Pwr >= 1000) && (Pwr < 10000)) {
-    SI_PORT &= SI_KILO_MASK;
-    tube.setColon(0,(Colon) Upper);
+    npipes.setPipeNumber(1, Prefix::Kila);
   } else if (Pwr >= 10000) {
-    SI_PORT &= SI_MEGA_MASK;
-    tube.setColon(1,(Colon) Upper);
-  } else {
-    tube.setColon(1,(Colon) None);
+    npipes.setPipeNumber(1, Prefix::Mega);
   }
   
-  tube.display();
+  npipes.write();
+  npipes.show();
 }
