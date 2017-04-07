@@ -1,12 +1,10 @@
-BOARD_TAG    = uno
-# mini settings
-#BOARD_TAG    = nano
+BOARDS_TXT = npboard.txt
+BOARD_TAG    = nixiepipe
+ISP_PROG = usbasp
+
 #MCU = atmega328p
-#F_CPU = 16000000
-#AVRDUDE_ARD_BAUDRATE = 57600
-# # FTDI
-#MONITOR_PORT = /dev/tty.SLAB*
-# MONITOR_PORT = /dev/tty.wchusb*
+# F_CPU = 16000000
+# MONITOR_PORT = /dev/tty.SLAB*
 
 ARDUINO_LIBS = FastLED RF24 NixiePipe SPI
 AVRDUDE_OPTS = -V

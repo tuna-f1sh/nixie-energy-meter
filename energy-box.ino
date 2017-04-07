@@ -7,9 +7,9 @@
 // Delay between prints and rolling filter calc
 #define PRINT_DELAY 2000
 
-NixiePipe npipes = NixiePipe(3,2);
+NixiePipe npipes = NixiePipe(5,2);
 
-RF24 radio(9,10);
+RF24 radio(19,18); // CE = A5/SCL; SCN = A4/SDA
 
 // Radio pipe addresses for the 2 nodes to communicate.
 const uint64_t pipes[2] = { 0xF0F0F0F0E1LL, 0xF0F0F0F0D2LL };
@@ -92,7 +92,7 @@ void loop()
     Serial.println(Pwr);
     count = 0;
   } else {
-    if (count > 5) {
+    if (count > 10) {
       npipes.setPipeColour(CRGB::Red);
       Pwr = 0;
     }
@@ -110,14 +110,28 @@ void loop()
 }
 
 void printPwr(uint16_t Pwr) {
-  npipes.writeNumber( (Pwr % 1000) );
+  npipes.setPipeColour(gMainRGB);
   
   if (Pwr < 1000) {
+    npipes.writeNumber( Pwr );
     npipes.setPipeColour(1, CRGB::Black);
+    npipes.setPipeColour(2,CRGB::White);
+    npipes.setPipeColour(3,CRGB::White);
+    npipes.setPipeColour(4,CRGB::White);
   } else if ((Pwr >= 1000) && (Pwr < 10000)) {
     npipes.setPipeNumber(1, Prefix::Kila);
+    /* npipes.writeNumber( Pwr / 1000 );*/ // 3 digits
+    npipes.writeNumber( Pwr / 10 ); // colour digits
+    npipes.setPipeColour(2,CRGB::White);
+    npipes.setPipeColour(3,CRGB::White);
+    npipes.setPipeColour(4,CRGB::Blue);
   } else if (Pwr >= 10000) {
     npipes.setPipeNumber(1, Prefix::Mega);
+    /* npipes.writeNumber( Pwr / 10000 );*/
+    npipes.writeNumber( Pwr / 100 ); // colour digits
+    npipes.setPipeColour(2,CRGB::White);
+    npipes.setPipeColour(3,CRGB::White);
+    npipes.setPipeColour(4,CRGB::Blue);
   }
   
   npipes.write();
